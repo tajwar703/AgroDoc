@@ -9,7 +9,7 @@ import {
   Leaf, AlertTriangle, ShieldAlert, CheckCircle,
   History, Loader2, ArrowRight, Zap,
   LogOut, LayoutDashboard, Store, Package, MapPin, Truck, UserCircle,
-  ScanLine, MessageCircle, Bot, Send
+  ScanLine, MessageCircle, Bot, Send // এই আইকনগুলো মিসিং ছিল, এখন যোগ করা হয়েছে
 } from "lucide-react";
 import TopNav from "../components/TopNav";
 import BottomNav from "../components/BottomNav";
@@ -18,7 +18,7 @@ const CLOUD_NAME    = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
 const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 const OR_KEY        = import.meta.env.VITE_OPENROUTER_API_KEY;
 
-// ✅ সবচেয়ে নির্ভরযোগ্য vision model আগে
+// ✅ Best model আগে — fastest & most accurate
 const FREE_VISION_MODELS = [
   "qwen/qwen2.5-vl-72b-instruct",
   "meta-llama/llama-4-maverick",
@@ -291,38 +291,6 @@ async function saveInBackground({ file, preview, user, aiData, confidencePercent
   }
 }
 
-// ✅ FIX: Severity সঠিকভাবে নির্ধারণ করার helper function
-function normalizeSeverity(severity, symptoms, diseaseName) {
-  const s = (severity || "").trim();
-
-  // সরাসরি সঠিক মান থাকলে ব্যবহার করো
-  if (["সুস্থ", "মাঝারি", "গুরুতর"].includes(s)) return s;
-
-  // ইংরেজি থেকে বাংলায় ম্যাপ করো
-  const lower = s.toLowerCase();
-  if (lower.includes("healthy") || lower.includes("normal") || lower.includes("good")) return "সুস্থ";
-  if (lower.includes("severe") || lower.includes("critical") || lower.includes("serious")) return "গুরুতর";
-  if (lower.includes("moderate") || lower.includes("mild") || lower.includes("early")) return "মাঝারি";
-
-  // রোগের নাম "সুস্থ" বা "healthy" হলে
-  const dLower = (diseaseName || "").toLowerCase();
-  if (dLower.includes("সুস্থ") || dLower.includes("healthy") || dLower.includes("normal")) return "সুস্থ";
-
-  // লক্ষণের সংখ্যা দেখে অনুমান করো
-  if (!symptoms || symptoms.length === 0) return "সুস্থ";
-  if (symptoms.length <= 1) return "মাঝারি";
-
-  return "মাঝারি"; // default — গুরুতর নয়
-}
-
-// ✅ FIX: Confidence সঠিক range এ রাখো
-function normalizeConfidence(confidence) {
-  const c = parseFloat(confidence);
-  if (isNaN(c)) return 0.80;
-  if (c > 1) return Math.min(c / 100, 0.99); // যদি 95 দেয় সেটাকে 0.95 বানাও
-  return Math.min(Math.max(c, 0.50), 0.99);
-}
-
 export default function Scanner() {
   const [image, setImage]         = useState(null);
   const [preview, setPreview]     = useState(null);
@@ -378,47 +346,41 @@ export default function Scanner() {
       const compressedDataUrl = await compressImage(image, 512, 0.75);
       console.log("Compressed:", Math.round(compressedDataUrl.length / 1024), "KB");
 
-      // ✅ FIX: নতুন ও সঠিক prompt — over-diagnosis রোধ করার জন্য
-      const prompt = `You are a careful and conservative Plant Pathologist specializing in Bangladeshi crops.
+      const prompt = `You are a Master Plant Pathologist in Bangladesh. You MUST follow these instructions with 100% strictness. 
 
-## YOUR MOST IMPORTANT RULE — READ CAREFULLY:
-**HEALTHY BIAS**: If the plant looks mostly normal with minor blemishes, aging, or natural discoloration — diagnose as HEALTHY. Do NOT invent diseases for normal plant variations.
+STEP 1: PLANT VERIFICATION
+- Is the image actually a plant, leaf, flower, or crop? If not, strictly set "isPlant" to false and stop.
+- Identify the exact plant (e.g., Rose, Tomato, Potato) and part (Leaf, Tuber). Do not confuse a rose leaf with a tomato leaf.
 
-## STEP 1: IS IT A PLANT?
-- If the image does NOT show a plant, leaf, or crop — set "isPlant": false and stop.
+STEP 2: DIAGNOSIS (CRITICAL THINKING)
+Look at the symptoms. Consider all possibilities:
+1. Fungal/Bacterial/Viral Disease (e.g., Blight, Rot, Mosaic).
+2. Pest Attack (e.g., Mites, Aphids, Leaf Miners).
+3. Nutrient Deficiency (e.g., Lack of Potassium, Nitrogen - often causes yellowing/reddening of edges without fungal spots).
+4. Healthy.
+If unsure, diagnose the most visually accurate issue.
 
-## STEP 2: FIRST, ASSUME HEALTHY
-- Look at the MAJORITY of the leaf/plant. Is most of it green and intact?
-- If YES → lean toward "সুস্থ" (Healthy) unless you see CLEAR disease signs.
-- Clear disease signs: large spots, lesions, rot, wilting across most of the plant, obvious pest damage covering >20% of surface.
-- Slight yellowing at edges, small spots, or minor discoloration = could be age, nutrient issue, or nothing serious.
+STEP 3: TREATMENT SAFETY (STRICT GUARDRAILS)
+- DO NOT invent chemical names. If you don't know a specific chemical, write "যেকোনো অনুমোদিত ছত্রাকনাশক/কীটনাশক".
+- DOSAGE MUST STRICTLY be between 1.0 to 3.0 gram/ml per Liter of water. NO EXCEPTIONS. If you suggest 50g/L, you will kill the crop.
 
-## STEP 3: SEVERITY — BE CONSERVATIVE
-- "সুস্থ" = Plant looks healthy or has only minor cosmetic issues. Most of the plant is normal.
-- "মাঝারি" = Clear visible disease affecting 10-40% of the plant. Plant is still alive but stressed.
-- "গুরুতর" = Severe damage covering >40% of plant, wilting, rotting, or near-dead state. ONLY use this for obviously severe cases.
-- **DEFAULT TO "মাঝারি" when unsure — NEVER default to "গুরুতর".**
-
-## STEP 4: TREATMENT SAFETY (STRICT)
-- DO NOT invent chemical names.
-- Dosage MUST be 1.0 to 3.0 gram/ml per Liter of water. Never exceed this.
-- For healthy plants: write "কোনো চিকিৎসার প্রয়োজন নেই" for treatments.
-
-## OUTPUT — Reply ONLY with valid JSON, no markdown, no extra text:
+STEP 4: OUTPUT FORMAT
+Reply ONLY with valid JSON. No markdown tags (like \`\`\`json), no extra text.
 
 {
   "isPlant": true,
-  "plantPart": "Plant name and part in Bangla (e.g., টমেটো পাতা, ধান গাছ)",
-  "visualAnalysis": "Exactly what you see in the image — describe objectively without assuming disease",
-  "classIndex": 0,
-  "diseaseName": "Disease or condition name in Bangla (English in parentheses) — use 'সুস্থ গাছ (Healthy Plant)' if healthy",
-  "cropName": "Crop name in Bangla",
-  "severity": "সুস্থ OR মাঝারি OR গুরুতর",
-  "confidence": 0.88,
-  "symptoms": ["symptom 1 in Bangla", "symptom 2 in Bangla"],
-  "organicTreatment": ["Organic solution in Bangla — write 'প্রয়োজন নেই' if healthy"],
-  "chemicalTreatment": ["Chemical name: X gram/ml per liter water — write 'প্রয়োজন নেই' if healthy"]
-}`;
+  "plantPart": "গাছের নাম ও অংশ (যেমন: গোলাপ পাতা, আলুর কন্দ, টমেটো পাতা)",
+  "visualAnalysis": "ছবিতে যা দেখছেন তার নিখুঁত বর্ণনা (যেমন: পাতার কিনারা লাল হয়ে গেছে যা পুষ্টির অভাব নির্দেশ করে)",
+  "classIndex": 1,
+  "diseaseName": "রোগ/সমস্যার নাম বাংলায় (English Name)",
+  "cropName": "ফসলের সঠিক নাম",
+  "severity": "সুস্থ অথবা মাঝারি অথবা গুরুতর",
+  "confidence": 0.95,
+  "symptoms": ["লক্ষণ ১", "লক্ষণ ২"],
+  "organicTreatment": ["জৈব বা প্রাকৃতিক সমাধান (গরম পানি দেওয়া নিষেধ)"],
+  "chemicalTreatment": ["ওষুধের নাম: প্রতি লিটার পানিতে ১-২ গ্রাম/মিলি (সর্বোচ্চ ৩)"]
+}
+`;
 
       let responseText = null;
 
@@ -447,7 +409,7 @@ export default function Scanner() {
                   ]
                 }],
                 max_tokens: 800,
-                temperature: 0.1, // ✅ FIX: 0.0 এর বদলে 0.1 — কম rigid, বেশি balanced
+                temperature: 0.0,
               })
             },
             15000
@@ -488,28 +450,13 @@ export default function Scanner() {
         return;
       }
 
-      // ✅ FIX: Severity normalize করো
-      aiData.severity = normalizeSeverity(aiData.severity, aiData.symptoms, aiData.diseaseName);
-
-      // ✅ FIX: Confidence normalize করো
-      aiData.confidence = normalizeConfidence(aiData.confidence);
-
-      // ✅ FIX: Chemical dosage সংশোধন করো (শুধু প্রয়োজনীয় ক্ষেত্রে)
       if (aiData.chemicalTreatment && Array.isArray(aiData.chemicalTreatment)) {
         aiData.chemicalTreatment = aiData.chemicalTreatment.map(item => {
-          // অস্বাভাবিক dose ধরো: 10 বা তার বেশি gram/ml হলে ঠিক করো
-          return item.replace(/\b([1-9]\d+)\s*(গ্রাম|gram|g|ml|মিলি)\b/gi, "২ গ্রাম/মিলি");
+          return item.replace(/(\d{2,})\s*(গ্রাম|gram|g|ml|মিলি)/gi, "২ গ্রাম/মিলি");
         });
       }
 
-      // ✅ FIX: সুস্থ গাছে symptoms থাকলে পরিষ্কার করো
-      if (aiData.severity === "সুস্থ") {
-        aiData.symptoms = aiData.symptoms?.length
-          ? ["সুস্থ গাছ — কোনো রোগের লক্ষণ নেই"]
-          : ["সুস্থ গাছ — কোনো রোগের লক্ষণ নেই"];
-      }
-
-      const confidencePercentage = Math.round(aiData.confidence * 100);
+      const confidencePercentage = Math.round((aiData.confidence || 0.90) * 100);
 
       setResult({
         name:       aiData.diseaseName,
@@ -518,7 +465,7 @@ export default function Scanner() {
       });
       setRawData({
         classIndex:  aiData.classIndex || 99,
-        confidence:  aiData.confidence,
+        confidence:  aiData.confidence || 0.90,
         imageUrl:    preview,
         diseaseData: aiData,
       });
@@ -687,7 +634,7 @@ export default function Scanner() {
               <div className={`rounded-[2rem] shadow-lg border ${cfg.border} ${cfg.bg} p-6 space-y-5 backdrop-blur-sm`}>
                 <div className="flex items-start justify-between">
                   <div className="flex-1 pr-3">
-                    <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wider">শনাক্তকৃত অবস্থা</p>
+                    <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wider">শনাক্তকৃত রোগ</p>
                     <h2 className="text-xl font-extrabold text-gray-800 leading-tight">{result.name}</h2>
                   </div>
                   <div className="bg-white p-2.5 rounded-2xl shadow-sm flex-shrink-0">{cfg.icon}</div>
@@ -715,7 +662,7 @@ export default function Scanner() {
                   className="w-full bg-white border border-gray-200 text-gray-800 hover:bg-gray-50 py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98]"
                 >
                   <Leaf className="w-4 h-4 text-green-500" />
-                  বিস্তারিত পরামর্শ ও চিকিৎসা দেখুন
+                  বিস্তারিত চিকিৎসা ও ডোজ দেখুন
                   <ArrowRight className="w-4 h-4" />
                 </button>
 
@@ -763,7 +710,7 @@ export default function Scanner() {
           <div className="flex-1 w-full flex flex-col items-center justify-center py-10 px-8 relative">
             <div className={`text-center mb-6 transition-all duration-700 delay-100 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}>
               <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">AgroDoc AI স্ক্যানার</h1>
-              <p className="text-gray-500 mt-2">আপনার ফসলের সঠিক রোগ নির্ণয় এবং তাৎক্ষণিক পরামর্শ পান।</p>
+              <p className="text-gray-500 mt-2">আপনার ফসলের সঠিক রোগ নির্ণয় এবং তাৎক্ষণিক চিকিৎসা পান।</p>
             </div>
             {ScannerCard}
           </div>
